@@ -7,7 +7,8 @@ Scripts getestet auf Tampermonkey, Projekte rund um Browsergame Evergore.de
 - Bestellungen - Markt = erstellt blöcke von 50k für den Kauf von HWM </br>
         - Mindestbestand im script definieren </br>
         - in der Angebotsübersicht Daten einlesen </br>
-                - es werden alle händler berücksichtig so das man nur auffüllt und nicht in Konkurenz geht   </br></br>
+                - es werden alle händler berücksichtig so das man nur auffüllt und nicht in Konkurenz geht   </br>
+                - Overlay ist jetzt verschiebbar</br></br>
 - Verkaufshelfer = erstellt Blöcke von 50k um die Handelsumsätze zu optimieren </br></br>
 - Handelslogger = logt im Hintergrund die Handelserfolge und bietet über einen Downloadbutton 2 gut Auswertbare csv an mit %-Rabatt und %-Häufigkeit </br>
         - Gesamtübersicht = Rabatte werden aufgelistet, als letzte Zeile erfolgt eine statistik </br>
