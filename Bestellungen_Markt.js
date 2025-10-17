@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bestellungen_Markt
 // @namespace    https://evergore.de/
-// @version      1.1
+// @version      1.2
 // @description  Markt-Bestellhelfer: liest Angebote ein und zeigt Blockempfehlungen (max. 50k Gold pro Block, mit persistenter Ausblendung)
 // @author       Vestri with KI
 // @match        https://evergore.de/lenoran?page=market_all_articles&selection=30
@@ -18,27 +18,27 @@
 
     // --- Konfiguration ---
     const produkte = [
-        { name: "Schmiedeöl", soll: 50, preis: 50 },
+        { name: "Schmiedeöl", soll: 100, preis: 50 },
         { name: "Bogensalbe", soll: 50, preis: 50 },
-        { name: "Harz", soll: 50, preis: 100 },
-        { name: "Zwirn", soll: 50, preis: 100 },
+        { name: "Harz", soll: 100, preis: 100 },
+        { name: "Zwirn", soll: 100, preis: 100 },
         { name: "Steinkohle", soll: 50, preis: 100 },
         { name: "Nähgarn", soll: 50, preis: 50 },
-        { name: "Lederfett", soll: 50, preis: 50 },
-        { name: "Magiesplitter", soll: 50, preis: 50 },
+        { name: "Lederfett", soll: 100, preis: 50 },
+        { name: "Magiesplitter", soll: 100, preis: 50 },
         { name: "Federn", soll: 50, preis: 25 },
         { name: "Salz", soll: 50, preis: 100 },
         { name: "Mörtel", soll: 20, preis: 80 },
         { name: "Sägeblatt", soll: 20, preis: 200 },
         { name: "Schleifstein", soll: 20, preis: 400 },
         { name: "Elbenhaar", soll: 20, preis: 400 },
-        { name: "Wattierung", soll: 20, preis: 400 },
-        { name: "Granitharz", soll: 20, preis: 150 },
+        { name: "Wattierung", soll: 40, preis: 400 },
+        { name: "Granitharz", soll: 40, preis: 150 },
         { name: "Glaszwirn", soll: 20, preis: 150 },
         { name: "Drachenzunder", soll: 20, preis: 150 },
         { name: "Schutzpolster", soll: 20, preis: 400 },
         { name: "Ledernieten", soll: 20, preis: 400 },
-        { name: "Phasenkraut", soll: 20, preis: 400 },
+        { name: "Phasenkraut", soll: 40, preis: 400 },
         { name: "Pfeilharz", soll: 20, preis: 400 },
         { name: "Kristallat", soll: 20, preis: 150 },
         { name: "Edelmörtel", soll: 20, preis: 180 },
