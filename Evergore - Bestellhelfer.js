@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Evergore - Bestellhelfer
 // @namespace    http://tampermonkey.net/
-// @version      0.5.6
-// @description  Markt-Helfer für Evergore (optimierte Blockbildung mit Produktbündelung & Reset)
+// @version      0.6.0
+// @description  Lese Lagerbestände seitenübergreifend ein, vergleiche mit Sollwerten, bilde Bestellblöcke und speichere kumulativ.
 // @author       Vestri mit KI
 // @match        https://evergore.de/lenoran?page=stock_out*
 // @match        https://evergore.de/lenoran?page=market_booth*
@@ -52,101 +52,97 @@
     if (location.href.includes("stock_out")) {
         let btn = document.createElement("button");
         btn.textContent = "📥 Bestände einlesen";
-        btn.style.position = "fixed";
-        btn.style.top = "10px";
-        btn.style.right = "10px";
-        btn.style.zIndex = 1000;
-        btn.style.padding = "10px";
-        btn.style.background = "yellow";
+        Object.assign(btn.style, {
+            position: "fixed", top: "10px", right: "10px",
+            zIndex: 1000, padding: "10px", background: "yellow"
+        });
         document.body.appendChild(btn);
 
         let resetBtn = document.createElement("button");
         resetBtn.textContent = "♻ Reset";
-        resetBtn.style.position = "fixed";
-        resetBtn.style.top = "50px";
-        resetBtn.style.right = "10px";
-        resetBtn.style.zIndex = 1000;
-        resetBtn.style.padding = "10px";
-        resetBtn.style.background = "lightcoral";
+        Object.assign(resetBtn.style, {
+            position: "fixed", top: "50px", right: "10px",
+            zIndex: 1000, padding: "10px", background: "lightcoral"
+        });
         document.body.appendChild(resetBtn);
 
         btn.addEventListener("click", () => {
-            const istBestand = {};
-            document.querySelectorAll("td.LT .handle label").forEach(label => {
-                let parts = label.innerText.trim().split(" ");
-                let menge = parseInt(parts[0].replace(/\D/g, ""), 10);
-                let name = parts.slice(1).join(" ");
-                btn.style.background = "green";
-                istBestand[name] = menge;
-            });
+    const istBestand = {};
+    document.querySelectorAll("td.LT .handle label").forEach(label => {
+        const parts = label.innerText.trim().split(" ");
+        const menge = parseInt(parts[0].replace(/\D/g, ""), 10);
+        const name = parts.slice(1).join(" ");
+        istBestand[name] = menge;
+    });
 
-            let bestellungen = [];
-            produkte.forEach(p => {
-                let ist = istBestand[p.name] || 0;
-                let diff = p.soll - ist;
-                if (diff > 0) {
-                    bestellungen.push({
-                        name: p.name,
-                        preis: p.preis,
-                        fehlt: diff
-                    });
-                }
-            });
+    // 🔹 vorhandene Daten abrufen
+    const alt = GM_getValue("bestellungen", []);
+    let merged = [...alt];
 
-            GM_setValue("bestellungen", bestellungen);
+    produkte.forEach(p => {
+        // Nur berücksichtigen, wenn der Artikel auf dieser Seite vorkommt
+        if (istBestand[p.name] === undefined) return;
 
-            console.log("📦 Eingelesene Bestände:", istBestand);
-            console.log("📝 Fehlende Produkte:", bestellungen);
-        });
+        const ist = istBestand[p.name];
+        const diff = p.soll - ist;
+
+        const existing = merged.find(x => x.name === p.name);
+
+        if (diff > 0) {
+            if (existing) {
+                // Nur aktualisieren, wenn der neue Wert kleiner (also genauer) ist
+                existing.fehlt = Math.min(existing.fehlt, diff);
+                existing.preis = p.preis;
+            } else {
+                merged.push({ name: p.name, preis: p.preis, fehlt: diff });
+            }
+        } else if (existing) {
+            // Wenn kein Fehlbedarf mehr -> entfernen
+            merged = merged.filter(x => x.name !== p.name);
+        }
+    });
+
+    GM_setValue("bestellungen", merged);
+    btn.style.background = "limegreen";
+    console.log("📦 Eingelesene Bestände (kumulativ, korrekt kombiniert):", merged);
+});
 
         resetBtn.addEventListener("click", () => {
             GM_setValue("bestellungen", []);
             GM_setValue("hiddenBlocks", []);
             resetBtn.style.background = "green";
-          //  alert("🔄 Daten wurden zurückgesetzt!");
+            console.log("🔄 Daten wurden komplett zurückgesetzt.");
         });
     }
 
     // --- Market Booth ---
     if (location.href.includes("market_booth")) {
-        let bestellungen = GM_getValue("bestellungen", []);
+        const bestellungen = GM_getValue("bestellungen", []);
         if (bestellungen.length === 0) return;
 
-        // 🔹 Optimierte Blockbildung
         let blocks = [];
         let currentBlock = { produkte: [], summe: 0 };
 
         bestellungen.forEach(p => {
             let rest = p.fehlt;
             while (rest > 0) {
-                let maxMenge = Math.floor(MAX_BLOCK / p.preis);
                 let platzMenge = Math.floor((MAX_BLOCK - currentBlock.summe) / p.preis);
-
                 if (platzMenge <= 0) {
-                    if (currentBlock.produkte.length > 0) blocks.push(currentBlock);
+                    blocks.push(currentBlock);
                     currentBlock = { produkte: [], summe: 0 };
                     continue;
                 }
-
-                let menge = Math.min(rest, platzMenge, maxMenge);
+                let menge = Math.min(rest, platzMenge);
                 let kosten = menge * p.preis;
-
-                let existing = currentBlock.produkte.find(x => x.name === p.name && x.preis === p.preis);
+                let existing = currentBlock.produkte.find(x => x.name === p.name);
                 if (existing) {
                     existing.menge += menge;
                     existing.summe += kosten;
                 } else {
-                    currentBlock.produkte.push({
-                        name: p.name,
-                        menge: menge,
-                        preis: p.preis,
-                        summe: kosten
-                    });
+                    currentBlock.produkte.push({ name: p.name, menge, preis: p.preis, summe: kosten });
                 }
-
                 currentBlock.summe += kosten;
                 rest -= menge;
-
                 if (currentBlock.summe >= MAX_BLOCK) {
                     blocks.push(currentBlock);
                     currentBlock = { produkte: [], summe: 0 };
@@ -155,50 +151,34 @@
         });
         if (currentBlock.produkte.length > 0) blocks.push(currentBlock);
 
-        // --- Overlay ---
+        // 🔹 Overlay
         const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.top = "50px";
-        overlay.style.right = "10px";
-        overlay.style.zIndex = 9999;
-        overlay.style.background = "white";
-        overlay.style.border = "2px solid black";
-        overlay.style.padding = "10px";
-        overlay.style.maxHeight = "90vh";
-        overlay.style.overflow = "auto";
-        overlay.style.fontSize = "14px";
+        Object.assign(overlay.style, {
+            position: "fixed", top: "50px", right: "10px", zIndex: 9999,
+            background: "white", border: "2px solid black", padding: "10px",
+            maxHeight: "90vh", overflow: "auto", fontSize: "14px"
+        });
         document.body.appendChild(overlay);
 
         const table = document.createElement("table");
-        table.style.borderCollapse = "collapse";
-        table.style.width = "100%";
-        table.style.border = "1px solid black";
-
-        table.innerHTML = `
-            <tr style="border-bottom:1px solid black; background:#eee;">
-              <th>✔</th>
-              <th>Produkt(e)</th>
-              <th>Summe</th>
-            </tr>
-        `;
+        Object.assign(table.style, { borderCollapse: "collapse", width: "100%", border: "1px solid black" });
+        table.innerHTML = `<tr style="border-bottom:1px solid black; background:#eee;">
+            <th>✔</th><th colspan="2">Lagerbestellungen</th></tr>`;
+        overlay.appendChild(table);
 
         let hiddenBlocks = GM_getValue("hiddenBlocks", []);
 
         blocks.forEach((block, idx) => {
-            let row = document.createElement("tr");
+            const row = document.createElement("tr");
             row.style.borderBottom = "1px solid black";
-
-            let produkteText = block.produkte.map(p => `${p.name} (${p.menge}×${p.preis})`).join("<br>");
-            row.innerHTML = `
-                <td><input type="checkbox" data-idx="${idx}" ${hiddenBlocks.includes(idx) ? "" : "checked"}></td>
-                <td>${produkteText}</td>
-                <td class="sum">${block.summe}</td>
-            `;
+            const produkteText = block.produkte.map(p => `${p.name} (${p.menge}×${p.preis})`).join("<br>");
+            row.innerHTML = `<td><input type="checkbox" data-idx="${idx}" ${hiddenBlocks.includes(idx) ? "" : "checked"}></td>
+                             <td>${produkteText}</td><td class="sum">${block.summe}</td>`;
             if (hiddenBlocks.includes(idx)) row.style.display = "none";
             table.appendChild(row);
         });
 
-        let sumRow = document.createElement("tr");
+        const sumRow = document.createElement("tr");
         sumRow.style.borderTop = "2px solid black";
         sumRow.innerHTML = `<td colspan="2"><b>Gesamtsumme:</b></td><td id="gesamt"></td>`;
         table.appendChild(sumRow);
@@ -209,7 +189,7 @@
             let sum = 0;
             overlay.querySelectorAll("tr").forEach(tr => {
                 if (tr.style.display !== "none") {
-                    let cell = tr.querySelector(".sum");
+                    const cell = tr.querySelector(".sum");
                     if (cell) sum += parseInt(cell.textContent, 10);
                 }
             });
@@ -219,7 +199,7 @@
 
         overlay.querySelectorAll("input[type=checkbox]").forEach(cb => {
             cb.addEventListener("change", e => {
-                let idx = parseInt(e.target.dataset.idx, 10);
+                const idx = parseInt(e.target.dataset.idx, 10);
                 if (e.target.checked) {
                     hiddenBlocks = hiddenBlocks.filter(i => i !== idx);
                     e.target.closest("tr").style.display = "";
