@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Evergore - Bestellhelfer
 // @namespace    http://tampermonkey.net/
-// @version      0.6.0
-// @description  Lese Lagerbestände seitenübergreifend ein, vergleiche mit Sollwerten, bilde Bestellblöcke und speichere kumulativ.
+// @version      1.0
+// @description  Saubere Multi-Page-Bestelllogik mit Soll/Ist-Abgleich, NULL-Markierung, Blockbildung und Overlay.
 // @author       Vestri mit KI
 // @match        https://evergore.de/lenoran?page=stock_out*
 // @match        https://evergore.de/lenoran?page=market_booth*
@@ -14,42 +14,46 @@
     'use strict';
 
     const produkte = [
-        { name: "Schmiedeöl", soll: 100, preis: 50 },
-        { name: "Bogensalbe", soll: 100, preis: 50 },
-        { name: "Harz", soll: 100, preis: 100 },
-        { name: "Zwirn", soll: 100, preis: 100 },
-        { name: "Steinkohle", soll: 100, preis: 100 },
-        { name: "Nähgarn", soll: 100, preis: 50 },
-        { name: "Lederfett", soll: 100, preis: 50 },
-        { name: "Magiesplitter", soll: 100, preis: 50 },
-        { name: "Federn", soll: 100, preis: 25 },
-        { name: "Salz", soll: 100, preis: 100 },
-        { name: "Mörtel", soll: 100, preis: 80 },
-        { name: "Sägeblatt", soll: 100, preis: 200 },
-        { name: "Schleifstein", soll: 100, preis: 400 },
-        { name: "Elbenhaar", soll: 100, preis: 400 },
-        { name: "Wattierung", soll: 100, preis: 400 },
-        { name: "Granitharz", soll: 100, preis: 150 },
-        { name: "Glaszwirn", soll: 100, preis: 150 },
-        { name: "Drachenzunder", soll: 100, preis: 150 },
-        { name: "Schutzpolster", soll: 100, preis: 400 },
-        { name: "Ledernieten", soll: 100, preis: 400 },
-        { name: "Phasenkraut", soll: 100, preis: 400 },
-        { name: "Pfeilharz", soll: 100, preis: 400 },
-        { name: "Kristallat", soll: 100, preis: 150 },
-        { name: "Edelmörtel", soll: 100, preis: 180 },
+        { name: "Schmiedeöl", soll: 2500, preis: 50 },
+        { name: "Bogensalbe", soll: 750, preis: 50 },
+        { name: "Harz", soll: 250, preis: 100 },
+        { name: "Zwirn", soll: 250, preis: 100 },
+        { name: "Steinkohle", soll: 250, preis: 100 },
+        { name: "Nähgarn", soll: 1200, preis: 50 },
+        { name: "Lederfett", soll: 1500, preis: 50 },
+        { name: "Magiesplitter", soll: 2000, preis: 50 },
+        { name: "Federn", soll: 1500, preis: 25 },
+        { name: "Salz", soll: 450, preis: 100 },
+        { name: "Mörtel", soll: 250, preis: 80 },
+        { name: "Sägeblatt", soll: 45, preis: 200 },
+        { name: "Edelsteinpolitur", soll: 1, preis: 5000 },
+        { name: "Schleifstein", soll: 300, preis: 400 },
+        { name: "Elbenhaar", soll: 125, preis: 400 },
+        { name: "Wattierung", soll: 150, preis: 400 },
+        { name: "Granitharz", soll: 350, preis: 150 },
+        { name: "Glaszwirn", soll: 300, preis: 150 },
+        { name: "Drachenzunder", soll: 300, preis: 150 },
+        { name: "Schutzpolster", soll: 200, preis: 400 },
+        { name: "Ledernieten", soll: 375, preis: 400 },
+        { name: "Phasenkraut", soll: 500, preis: 400 },
+        { name: "Pfeilharz", soll: 50, preis: 400 },
+        { name: "Kristallat", soll: 400, preis: 150 },
+        { name: "Edelmörtel", soll: 200, preis: 180 },
+        { name: "Griffband", soll: 75, preis: 2000 },
+        { name: "Nieten", soll: 75, preis: 2000 },
+        { name: "Vulkandraht", soll: 75, preis: 2000 },
         { name: "Beschläge", soll: 100, preis: 2000 },
-        { name: "Drachinschneiden", soll: 100, preis: 2000 },
-        { name: "Erdenblut", soll: 100, preis: 2000 },
-        { name: "Griffband", soll: 100, preis: 2000 },
-        { name: "Nieten", soll: 100, preis: 2000 },
-        { name: "Vulkandraht", soll: 100, preis: 2000 }
+        { name: "Erdenblut", soll: 75, preis: 2000 },
+        { name: "Drachinschneiden", soll: 0, preis: 2000 }
     ];
 
     const MAX_BLOCK = 50000;
 
-    // --- Stock Out ---
+    // -----------------------------
+    // STOCK OUT – Einlesen
+    // -----------------------------
     if (location.href.includes("stock_out")) {
+
         let btn = document.createElement("button");
         btn.textContent = "📥 Bestände einlesen";
         Object.assign(btn.style, {
@@ -67,148 +71,179 @@
         document.body.appendChild(resetBtn);
 
         btn.addEventListener("click", () => {
-    const istBestand = {};
-    document.querySelectorAll("td.LT .handle label").forEach(label => {
-        const parts = label.innerText.trim().split(" ");
-        const menge = parseInt(parts[0].replace(/\D/g, ""), 10);
-        const name = parts.slice(1).join(" ");
-        istBestand[name] = menge;
-    });
 
-    // 🔹 vorhandene Daten abrufen
-    const alt = GM_getValue("bestellungen", []);
-    let merged = [...alt];
+            let speicher = GM_getValue("bestellungen", {});
+            const istBestand = {};
 
-    produkte.forEach(p => {
-        // Nur berücksichtigen, wenn der Artikel auf dieser Seite vorkommt
-        if (istBestand[p.name] === undefined) return;
+            // --- IST-Werte der Seite lesen ---
+            document.querySelectorAll("td.LT .handle label").forEach(label => {
+                const parts = label.innerText.trim().split(" ");
+                const menge = parseInt(parts[0].replace(/\D/g, ""), 10);
+                const name = parts.slice(1).join(" ");
+                istBestand[name] = menge;
+            });
 
-        const ist = istBestand[p.name];
-        const diff = p.soll - ist;
+            // --- Für alle Produkte verarbeiten ---
+            produkte.forEach(p => {
+                const ist = istBestand[p.name];
 
-        const existing = merged.find(x => x.name === p.name);
+                // 1) IST-Wert vorhanden → Fehl berechnen
+                if (ist !== undefined) {
 
-        if (diff > 0) {
-            if (existing) {
-                // Nur aktualisieren, wenn der neue Wert kleiner (also genauer) ist
-                existing.fehlt = Math.min(existing.fehlt, diff);
-                existing.preis = p.preis;
-            } else {
-                merged.push({ name: p.name, preis: p.preis, fehlt: diff });
-            }
-        } else if (existing) {
-            // Wenn kein Fehlbedarf mehr -> entfernen
-            merged = merged.filter(x => x.name !== p.name);
-        }
-    });
+                    if (speicher[p.name] !== undefined) {
+                        // Fehl = gespeicherter Fehl – Ist
+                        let neu = speicher[p.name] - ist;
+                        if (neu <= 0) neu = null;
+                        speicher[p.name] = neu;
+                    } else {
+                        // Fehl = Soll – Ist
+                        let neu = p.soll - ist;
+                        if (neu <= 0) neu = null;
+                        speicher[p.name] = neu;
+                    }
+                }
 
-    GM_setValue("bestellungen", merged);
-    btn.style.background = "limegreen";
-    console.log("📦 Eingelesene Bestände (kumulativ, korrekt kombiniert):", merged);
-});
+                // 2) Kein IST-Wert und Produkt noch nie gesehen → Komplettbedarf
+                else if (speicher[p.name] === undefined) {
+                    speicher[p.name] = p.soll;
+                }
+                // 3) Kein IST, aber Speicher existiert → Wert bleibt (NULL oder Zahl)
+            });
+
+            GM_setValue("bestellungen", speicher);
+            btn.style.background = "limegreen";
+            console.log("📦 Neuer Speicher:", speicher);
+        });
 
         resetBtn.addEventListener("click", () => {
-            GM_setValue("bestellungen", []);
+            GM_setValue("bestellungen", {});
             GM_setValue("hiddenBlocks", []);
             resetBtn.style.background = "green";
-            console.log("🔄 Daten wurden komplett zurückgesetzt.");
+            console.log("🔄 Reset durchgeführt.");
         });
     }
 
-    // --- Market Booth ---
+    // -----------------------------
+    // MARKET BOOTH – Overlay
+    // -----------------------------
     if (location.href.includes("market_booth")) {
-        const bestellungen = GM_getValue("bestellungen", []);
-        if (bestellungen.length === 0) return;
+
+        const bestellungen = GM_getValue("bestellungen", {});
+        const entries = Object.entries(bestellungen)
+            .filter(([name, fehlt]) => fehlt !== null && fehlt > 0)
+            .map(([name, fehlt]) => {
+                const p = produkte.find(x => x.name === name);
+                return { name, fehlt, preis: p ? p.preis : 0 };
+            });
+
+        if (entries.length === 0) return;
 
         let blocks = [];
-        let currentBlock = { produkte: [], summe: 0 };
+        let block = { produkte: [], summe: 0 };
 
-        bestellungen.forEach(p => {
+        entries.forEach(p => {
             let rest = p.fehlt;
+
             while (rest > 0) {
-                let platzMenge = Math.floor((MAX_BLOCK - currentBlock.summe) / p.preis);
-                if (platzMenge <= 0) {
-                    blocks.push(currentBlock);
-                    currentBlock = { produkte: [], summe: 0 };
+                let platz = Math.floor((MAX_BLOCK - block.summe) / p.preis);
+                if (platz <= 0) {
+                    blocks.push(block);
+                    block = { produkte: [], summe: 0 };
                     continue;
                 }
-                let menge = Math.min(rest, platzMenge);
+                let menge = Math.min(rest, platz);
                 let kosten = menge * p.preis;
-                let existing = currentBlock.produkte.find(x => x.name === p.name);
-                if (existing) {
-                    existing.menge += menge;
-                    existing.summe += kosten;
+
+                let ex = block.produkte.find(x => x.name === p.name);
+                if (ex) {
+                    ex.menge += menge;
+                    ex.summe += kosten;
                 } else {
-                    currentBlock.produkte.push({ name: p.name, menge, preis: p.preis, summe: kosten });
+                    block.produkte.push({
+                        name: p.name,
+                        menge,
+                        preis: p.preis,
+                        summe: kosten
+                    });
                 }
-                currentBlock.summe += kosten;
+
+                block.summe += kosten;
                 rest -= menge;
-                if (currentBlock.summe >= MAX_BLOCK) {
-                    blocks.push(currentBlock);
-                    currentBlock = { produkte: [], summe: 0 };
+
+                if (block.summe >= MAX_BLOCK) {
+                    blocks.push(block);
+                    block = { produkte: [], summe: 0 };
                 }
             }
         });
-        if (currentBlock.produkte.length > 0) blocks.push(currentBlock);
 
-        // 🔹 Overlay
+        if (block.produkte.length > 0) blocks.push(block);
+
+        // --- Overlay ---
         const overlay = document.createElement("div");
         Object.assign(overlay.style, {
-            position: "fixed", top: "50px", right: "10px", zIndex: 9999,
-            background: "white", border: "2px solid black", padding: "10px",
-            maxHeight: "90vh", overflow: "auto", fontSize: "14px"
+            position: "fixed", top: "50px", right: "10px",
+            zIndex: 9999, background: "white", border: "2px solid black",
+            padding: "10px", maxHeight: "90vh", overflow: "auto",
+            fontSize: "14px"
         });
         document.body.appendChild(overlay);
 
         const table = document.createElement("table");
-        Object.assign(table.style, { borderCollapse: "collapse", width: "100%", border: "1px solid black" });
+        Object.assign(table.style, { borderCollapse: "collapse", width: "100%" });
+
         table.innerHTML = `<tr style="border-bottom:1px solid black; background:#eee;">
-            <th>✔</th><th colspan="2">Lagerbestellungen</th></tr>`;
+            <th>✔</th><th>Block</th><th>Summe</th>
+        </tr>`;
+
         overlay.appendChild(table);
 
-        let hiddenBlocks = GM_getValue("hiddenBlocks", []);
+        let hidden = GM_getValue("hiddenBlocks", []);
 
         blocks.forEach((block, idx) => {
             const row = document.createElement("tr");
             row.style.borderBottom = "1px solid black";
-            const produkteText = block.produkte.map(p => `${p.name} (${p.menge}×${p.preis})`).join("<br>");
-            row.innerHTML = `<td><input type="checkbox" data-idx="${idx}" ${hiddenBlocks.includes(idx) ? "" : "checked"}></td>
-                             <td>${produkteText}</td><td class="sum">${block.summe}</td>`;
-            if (hiddenBlocks.includes(idx)) row.style.display = "none";
+            const produkteText = block.produkte
+                .map(p => `${p.name} (${p.menge}×${p.preis})`)
+                .join("<br>");
+
+            row.innerHTML = `
+                <td><input type="checkbox" data-idx="${idx}" ${hidden.includes(idx) ? "" : "checked"}></td>
+                <td>${produkteText}</td>
+                <td class="sum">${block.summe}</td>
+            `;
+
+            if (hidden.includes(idx)) row.style.display = "none";
             table.appendChild(row);
         });
 
         const sumRow = document.createElement("tr");
         sumRow.style.borderTop = "2px solid black";
-        sumRow.innerHTML = `<td colspan="2"><b>Gesamtsumme:</b></td><td id="gesamt"></td>`;
+        sumRow.innerHTML = `<td colspan="2"><b>Gesamt:</b></td><td id="gesamt"></td>`;
         table.appendChild(sumRow);
 
-        overlay.appendChild(table);
-
-        function updateSumme() {
-            let sum = 0;
-            overlay.querySelectorAll("tr").forEach(tr => {
-                if (tr.style.display !== "none") {
-                    const cell = tr.querySelector(".sum");
-                    if (cell) sum += parseInt(cell.textContent, 10);
-                }
+        function updateSum() {
+            let s = 0;
+            overlay.querySelectorAll(".sum").forEach(c => {
+                if (c.parentElement.style.display !== "none")
+                    s += parseInt(c.textContent, 10);
             });
-            document.getElementById("gesamt").textContent = sum;
+            document.getElementById("gesamt").textContent = s;
         }
-        updateSumme();
+        updateSum();
 
         overlay.querySelectorAll("input[type=checkbox]").forEach(cb => {
             cb.addEventListener("change", e => {
                 const idx = parseInt(e.target.dataset.idx, 10);
                 if (e.target.checked) {
-                    hiddenBlocks = hiddenBlocks.filter(i => i !== idx);
+                    hidden = hidden.filter(x => x !== idx);
                     e.target.closest("tr").style.display = "";
                 } else {
-                    if (!hiddenBlocks.includes(idx)) hiddenBlocks.push(idx);
+                    if (!hidden.includes(idx)) hidden.push(idx);
                     e.target.closest("tr").style.display = "none";
                 }
-                GM_setValue("hiddenBlocks", hiddenBlocks);
-                updateSumme();
+                GM_setValue("hiddenBlocks", hidden);
+                updateSum();
             });
         });
     }
