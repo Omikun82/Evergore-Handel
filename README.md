@@ -15,3 +15,7 @@ Scripts getestet auf Tampermonkey, Projekte rund um Browsergame Evergore.de
         - Gesamtübersicht = Rabatte werden aufgelistet, als letzte Zeile erfolgt eine statistik </br>
         - Tagesübersicht = Reine statistik auf die tage runtergerechent </br>
           - Multiuser lösung falls sich mehrere Feilscher einen PC teilen
+  </br></br>
+  - Battle overview = simble erfassung der Jagdwerte also Loot in Gold und EXP
+          - eigener Name Fett
+          - kleiner Counter eingelesener Kämpfe
