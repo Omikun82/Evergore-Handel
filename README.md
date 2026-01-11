@@ -16,6 +16,6 @@ Scripts getestet auf Tampermonkey, Projekte rund um Browsergame Evergore.de
         - Tagesübersicht = Reine statistik auf die tage runtergerechent </br>
           - Multiuser lösung falls sich mehrere Feilscher einen PC teilen
   </br></br>
-- Battle overview = simble erfassung der Jagdwerte also Loot in Gold und EXP
-          - eigener Name Fett
+- Battle overview = simble erfassung der Jagdwerte also Loot in Gold und EXP </br>
+          - eigener Name Fett</br>
           - kleiner Counter eingelesener Kämpfe
