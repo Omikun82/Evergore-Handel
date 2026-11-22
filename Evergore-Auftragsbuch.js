@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evergore - Auftragsbuch (Multiuser tauglich)
 // @namespace    https://evergore.de/
-// @version      1.1
+// @version      1.2
 // @description  Rein lesende Auftrags- und Rezeptverwaltung für Evergore mit Zutatenverwaltung.
 // @author       Omikun & ChatGPT
 // @match        https://evergore.de/zwischenwelt?page=craft*
@@ -19,7 +19,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '1.1';
+    const VERSION = '1.2';
     const PREFIX = 'eg_auftragsbuch_v01_';
 
     // GitHub-Updateprüfung: Es wird ausschließlich @version ausgelesen.
@@ -95,7 +95,11 @@
                 const comparison = compareVersions(updateState.latestVersion, VERSION);
 
                 if (comparison > 0) {
-                    updateState.message = `Update verfügbar: Version ${updateState.latestVersion} (installiert: ${VERSION}).`;
+                     updateState.message =
+                      `Update verfügbar: Version ${updateState.latestVersion} (installiert: ${VERSION}).`;
+
+                      updateState.link =
+                         'https://github.com/Omikun82/Evergore-Handel/blob/main/Evergore-Auftragsbuch.js';
                 } else if (comparison === 0) {
                     updateState.message = `Du verwendest die aktuelle Version ${VERSION}.`;
                 } else {
@@ -1226,8 +1230,12 @@
  </div>
  ${updateState.checked && updateState.latestVersion && compareVersions(updateState.latestVersion, VERSION) > 0 ? `
   <div class="eg-warning">
-   Eine neuere Version ist verfügbar. Bitte lade sie selbst herunter und installiere sie manuell in Tampermonkey.
-   Es erfolgt keine automatische Änderung.
+   <a
+    href="https://github.com/Omikun82/Evergore-Handel/blob/main/Evergore-Auftragsbuch.js"
+    target="_blank"
+    rel="noopener noreferrer">
+    Update auf GitHub öffnen
+</a>
   </div>
  ` : ''}
 </div>`;
