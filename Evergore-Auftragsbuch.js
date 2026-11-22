@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Evergore - Auftragsbuch (Multiuser tauglich)
 // @namespace    https://evergore.de/
-// @version      1.0
+// @version      1.1
 // @description  Rein lesende Auftrags- und Rezeptverwaltung für Evergore mit Zutatenverwaltung.
 // @author       Omikun & ChatGPT
 // @match        https://evergore.de/zwischenwelt?page=craft*
@@ -11,14 +11,113 @@
 // @grant        GM_setValue
 // @grant        GM_deleteValue
 // @grant        GM_addStyle
+// @grant        GM_xmlhttpRequest
+// @connect      raw.githubusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
 
 (() => {
     'use strict';
 
-    const VERSION = '1.0';
+    const VERSION = '1.1';
     const PREFIX = 'eg_auftragsbuch_v01_';
+
+    // GitHub-Updateprüfung: Es wird ausschließlich @version ausgelesen.
+    // Kein automatischer Download, keine Installation und keine Änderung an Aufträgen.
+    const GITHUB_VERSION_URL =
+        'https://raw.githubusercontent.com/Omikun82/Evergore-Handel/main/Evergore-Auftragsbuch.js';
+
+    const updateState = {
+        checked: false,
+        checking: false,
+        latestVersion: '',
+        message: ''
+    };
+
+    function compareVersions(a, b) {
+        const parse = value => String(value)
+            .split('.')
+            .map(part => parseInt(part, 10) || 0);
+
+        const va = parse(a);
+        const vb = parse(b);
+        const length = Math.max(va.length, vb.length);
+
+        for (let i = 0; i < length; i++) {
+            const na = va[i] || 0;
+            const nb = vb[i] || 0;
+            if (na > nb) return 1;
+            if (na < nb) return -1;
+        }
+        return 0;
+    }
+
+    function checkForUpdates() {
+        if (updateState.checking) return;
+
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            updateState.message = 'Update-Prüfung nicht verfügbar: GM_xmlhttpRequest fehlt.';
+            render();
+            return;
+        }
+
+        updateState.checking = true;
+        updateState.checked = false;
+        updateState.message = 'Prüfe GitHub-Version ...';
+        render();
+
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: GITHUB_VERSION_URL,
+            headers: { 'Cache-Control': 'no-cache' },
+            timeout: 15000,
+            onload(response) {
+                updateState.checking = false;
+                updateState.checked = true;
+
+                if (response.status !== 200) {
+                    updateState.message = `GitHub-Prüfung fehlgeschlagen (HTTP ${response.status}).`;
+                    render();
+                    return;
+                }
+
+                const match = response.responseText.match(
+                    /^\s*\/\/\s*@version\s+([0-9]+(?:\.[0-9]+)*)/m
+                );
+
+                if (!match) {
+                    updateState.message = 'Keine gültige Versionsnummer auf GitHub gefunden.';
+                    render();
+                    return;
+                }
+
+                updateState.latestVersion = match[1];
+                const comparison = compareVersions(updateState.latestVersion, VERSION);
+
+                if (comparison > 0) {
+                    updateState.message = `Update verfügbar: Version ${updateState.latestVersion} (installiert: ${VERSION}).`;
+                } else if (comparison === 0) {
+                    updateState.message = `Du verwendest die aktuelle Version ${VERSION}.`;
+                } else {
+                    updateState.message = `Deine Version ${VERSION} ist neuer als GitHub (${updateState.latestVersion}).`;
+                }
+
+                render();
+            },
+            onerror() {
+                updateState.checking = false;
+                updateState.checked = true;
+                updateState.message = 'GitHub konnte nicht erreicht werden. Bitte später erneut versuchen.';
+                render();
+            },
+            ontimeout() {
+                updateState.checking = false;
+                updateState.checked = true;
+                updateState.message = 'Zeitüberschreitung bei der GitHub-Prüfung.';
+                render();
+            }
+        });
+    }
 
     const PAGE = new URL(location.href).searchParams.get('page') || '';
     const IS_CRAFT = PAGE.startsWith('craft');
@@ -755,12 +854,76 @@
 </div>`;
         }
 
+        // Alle Zutaten der offenen Aufträge zusammenfassen.
+        // Der Status bleibt dennoch je Auftrag gespeichert.
+        const groupedIngredients = new Map();
+
+        for (const order of openOrders) {
+            for (const item of getOrderIngredients(order)) {
+                const key = ingredientKey(item.name);
+
+                if (!groupedIngredients.has(key)) {
+                    groupedIngredients.set(key, {
+                        name: item.name,
+                        amount: 0,
+                        orders: []
+                    });
+                }
+
+                const group = groupedIngredients.get(key);
+                group.amount += item.amount;
+                group.orders.push({
+                    order,
+                    amount: item.amount,
+                    present: isIngredientPresent(order, item.name)
+                });
+            }
+        }
+
         let html = `
 <div class="eg-section">
- <div class="eg-section-title">Benötigte Zutaten nach Auftrag</div>
+ <div class="eg-section-title">Zutaten – Gesamtbedarf</div>
  <div class="eg-muted">
-  Markiere hier die Zutaten, die du für den jeweiligen Auftrag bereitgelegt hast.
-  Die Markierung gilt ausschließlich für diesen Auftrag.
+  Hier kannst du eine Zutat für alle Aufträge gleichzeitig bestätigen
+  oder die Teilmengen weiter unten einzeln abhaken.
+  Die Gesamtmarkierung aktualisiert die jeweiligen Auftragsmarkierungen.
+ </div>`;
+
+        if (groupedIngredients.size) {
+            for (const item of [...groupedIngredients.values()].sort((a, b) =>
+                a.name.localeCompare(b.name, 'de')
+            )) {
+                const presentCount = item.orders.filter(entry => entry.present).length;
+                const totalCount = item.orders.length;
+                const allPresent = presentCount === totalCount;
+                const partiallyPresent = presentCount > 0 && !allPresent;
+
+                html += `
+<label class="eg-ingredient ${allPresent ? 'eg-present' : ''}" style="padding:7px 2px">
+ <input type="checkbox"
+        data-action="ingredient-group"
+        data-ingredient="${escapeHTML(item.name)}"
+        data-partial="${partiallyPresent ? 'true' : 'false'}"
+        ${allPresent ? 'checked' : ''}>
+ <span class="eg-ingredient-name">${escapeHTML(item.name)}</span>
+ <span style="margin-left:auto;white-space:nowrap;font-weight:bold">
+  ${formatNumber(item.amount)} Stück
+ </span>
+ <span class="eg-muted" style="white-space:nowrap">
+  ${presentCount}/${totalCount}
+ </span>
+</label>`;
+            }
+        } else {
+            html += `<div class="eg-muted">Keine Rezeptzutaten in offenen Aufträgen vorhanden.</div>`;
+        }
+
+        html += `
+</div>
+<div class="eg-section">
+ <div class="eg-section-title">Einzelmengen nach Auftrag</div>
+ <div class="eg-muted">
+  Einzelne Teilmengen können unabhängig voneinander bestätigt werden.
  </div>
 </div>`;
 
@@ -768,7 +931,6 @@
 
         for (const order of openOrders) {
             const ingredients = getOrderIngredients(order);
-
             if (!ingredients.length) continue;
 
             ingredientOrders++;
@@ -822,6 +984,7 @@
 
         return html;
     }
+
     // ------------------------------------------------------------
     // MARKTÜBERSICHT: ALLE NOCH BENÖTIGTEN ZUTATEN
     // ------------------------------------------------------------
@@ -1050,6 +1213,23 @@
         body += `
 <div class="eg-muted">
  Benutzer: ${escapeHTML(state.username)} · Version ${VERSION}
+</div>
+<div class="eg-section">
+ <div class="eg-section-title">Software-Update</div>
+ <div class="eg-muted">
+  ${escapeHTML(updateState.message || 'Noch keine Update-Prüfung durchgeführt.')}
+ </div>
+ <div class="eg-actions">
+  <button data-action="check-update" ${updateState.checking ? 'disabled' : ''}>
+   ${updateState.checking ? 'Prüfe ...' : 'Auf Updates prüfen'}
+  </button>
+ </div>
+ ${updateState.checked && updateState.latestVersion && compareVersions(updateState.latestVersion, VERSION) > 0 ? `
+  <div class="eg-warning">
+   Eine neuere Version ist verfügbar. Bitte lade sie selbst herunter und installiere sie manuell in Tampermonkey.
+   Es erfolgt keine automatische Änderung.
+  </div>
+ ` : ''}
 </div>`;
 
         if (IS_CRAFT) {
@@ -1258,6 +1438,31 @@
             });
         });
 
+        // Kumulative Markierung: dieselbe Zutat in allen offenen Aufträgen setzen.
+        root.querySelectorAll('input[data-action="ingredient-group"]').forEach(input => {
+            input.indeterminate = input.dataset.partial === 'true';
+
+            input.addEventListener('change', async () => {
+                const key = ingredientKey(input.dataset.ingredient);
+                const present = input.checked;
+
+                for (const order of state.orders) {
+                    if (order.status === 'Erledigt') continue;
+
+                    const matchingIngredient = getOrderIngredients(order).find(item =>
+                        ingredientKey(item.name) === key
+                    );
+
+                    if (matchingIngredient) {
+                        setIngredientPresent(order, matchingIngredient.name, present);
+                    }
+                }
+
+                await save();
+                render();
+            });
+        });
+
         root.querySelectorAll('button[data-action]').forEach(button => {
             button.addEventListener('click', async () => {
                 const action = button.dataset.action;
@@ -1265,6 +1470,10 @@
 
                 if (action === 'add') {
                     await addOrder(root);
+                }
+
+                if (action === 'check-update') {
+                    checkForUpdates();
                 }
 
                 if (action === 'rescan') {
