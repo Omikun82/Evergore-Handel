@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Evergore - Auftragsbuch (Multiuser tauglich)
 // @namespace    https://evergore.de/
-// @version      1.2
+// @version      1.3
 // @description  Rein lesende Auftrags- und Rezeptverwaltung für Evergore mit Zutatenverwaltung.
 // @author       Omikun & ChatGPT
-// @match        https://evergore.de/zwischenwelt?page=craft*
-// @match        https://evergore.de/zwischenwelt?page=bank*
-// @match        https://evergore.de/zwischenwelt?page=market*
+// @match        https://evergore.de/*?page=craft*
+// @match        https://evergore.de/*?page=bank*
+// @match        https://evergore.de/*?page=market*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
@@ -19,7 +19,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '1.2';
+    const VERSION = '1.3';
     const PREFIX = 'eg_auftragsbuch_v01_';
 
     // GitHub-Updateprüfung: Es wird ausschließlich @version ausgelesen.
@@ -95,11 +95,11 @@
                 const comparison = compareVersions(updateState.latestVersion, VERSION);
 
                 if (comparison > 0) {
-                     updateState.message =
-                      `Update verfügbar: Version ${updateState.latestVersion} (installiert: ${VERSION}).`;
+                    updateState.message =
+                        `Update verfügbar: Version ${updateState.latestVersion} (installiert: ${VERSION}).`;
 
-                      updateState.link =
-                         'https://github.com/Omikun82/Evergore-Handel/blob/main/Evergore-Auftragsbuch.js';
+                    updateState.link =
+                        'https://github.com/Omikun82/Evergore-Handel/blob/main/Evergore-Auftragsbuch.js';
                 } else if (comparison === 0) {
                     updateState.message = `Du verwendest die aktuelle Version ${VERSION}.`;
                 } else {
@@ -206,14 +206,41 @@
         console.warn('[Auftragsbuch] Benutzername nicht gefunden. Speicherung wird deaktiviert.');
     }
 
-    const storageKey = PREFIX + (
-        username
-            ? username.toLowerCase().replace(/[^a-z0-9_-]/gi, '_')
-            : 'unbekannt'
-    );
+    // Welt und Charakter werden getrennt erkannt und bilden gemeinsam
+    // den eindeutigen Speicherbereich.
+    // Beispiel: eg_auftragsbuch_v01_zwischenwelt__vestri
+    function getWorldId() {
+        const segment = location.pathname.split('/').filter(Boolean)[0] || '';
+        let decoded = segment;
+
+        try {
+            decoded = decodeURIComponent(segment);
+        } catch (_) {
+            // Bei fehlerhafter URL-Kodierung den Originalwert verwenden.
+        }
+
+        return clean(decoded).toLowerCase().replace(/[^a-z0-9_-]/gi, '_') ||
+            'unbekannte_welt';
+    }
+
+    function getCharacterId(value) {
+        return value
+            ? value.toLowerCase().replace(/[^a-z0-9_-]/gi, '_')
+            : 'unbekannt';
+    }
+
+    const worldId = getWorldId();
+    const characterId = getCharacterId(username);
+    const storageKey = `${PREFIX}${worldId}__${characterId}`;
+
+    // Alte Versionen speicherten ausschließlich unter dem Charakter.
+    // Diese nicht weltbezogenen Daten werden ausschließlich der
+    // Zwischenwelt zugeordnet. Andere Welten bleiben davon unberührt.
+    const legacyStorageKey = PREFIX + characterId;
 
     const state = {
         username: username || 'Unbekannt',
+        world: worldId,
         orders: [],
         nextNumber: 1,
 
@@ -263,6 +290,7 @@
 
         return writeStore(storageKey, {
             version: VERSION,
+            world: state.world,
             username: state.username,
             nextNumber: state.nextNumber,
             orders: state.orders
@@ -1229,8 +1257,8 @@
   </button>
  </div>
  ${updateState.checked && updateState.latestVersion && compareVersions(updateState.latestVersion, VERSION) > 0 ? `
-  Softwareupdae nun verfügbar -> <div class="eg-warning">
-   <a
+  <div class="eg-warning">
+    Softwareupdate verfügbar <a
     href="https://github.com/Omikun82/Evergore-Handel/blob/main/Evergore-Auftragsbuch.js"
     target="_blank"
     rel="noopener noreferrer">
@@ -1641,6 +1669,7 @@
     function exportBackup() {
         const payload = JSON.stringify({
             version: VERSION,
+            world: state.world,
             username: state.username,
             nextNumber: state.nextNumber,
             orders: state.orders
@@ -1654,20 +1683,62 @@
         const anchor = document.createElement('a');
 
         anchor.href = url;
-        anchor.download = `evergore-auftragsbuch-${state.username}.json`;
+        anchor.download = `evergore-auftragsbuch-${state.world}-${state.username}.json`;
         anchor.click();
 
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     // ------------------------------------------------------------
-    // INITIALISIERUNG
+    // INITIALISIERUNG / MIGRATION
     // ------------------------------------------------------------
 
+    async function loadCharacterStore() {
+        if (!username) return null;
+
+        // Neue weltbezogene Daten haben immer Vorrang.
+        const currentStore = await readStore(storageKey, null);
+        if (currentStore !== null) return currentStore;
+
+        // Nur die Zwischenwelt darf den alten, weltlosen Speicher übernehmen.
+        // Existiert bereits ein neuer Speicher, wird niemals zusammengeführt
+        // oder überschrieben. Der alte Eintrag bleibt als Sicherheitskopie.
+        if (worldId === 'zwischenwelt') {
+            const legacyStore = await readStore(legacyStorageKey, null);
+
+            if (legacyStore && typeof legacyStore === 'object') {
+                const copied = {
+                    ...legacyStore,
+                    version: VERSION,
+                    world: worldId,
+                    username: state.username
+                };
+
+                const saved = await writeStore(storageKey, copied);
+                if (saved) {
+                    const verification = await readStore(storageKey, null);
+                    if (verification && typeof verification === 'object') {
+                        console.info(
+                            '[Auftragsbuch] Alte weltlose Daten wurden der Zwischenwelt zugeordnet. ' +
+                            'Der ursprüngliche Speicher bleibt als Sicherheitskopie erhalten.'
+                        );
+                        return verification;
+                    }
+                }
+
+                console.error(
+                    '[Auftragsbuch] Migration der alten Daten fehlgeschlagen. ' +
+                    'Der ursprüngliche Speicher wurde nicht verändert.'
+                );
+                return legacyStore;
+            }
+        }
+
+        return null;
+    }
+
     async function init() {
-        const stored = username
-            ? await readStore(storageKey, null)
-            : null;
+        const stored = await loadCharacterStore();
 
         if (stored && typeof stored === 'object') {
             state.orders = Array.isArray(stored.orders)
@@ -1734,8 +1805,8 @@
         render();
 
         console.info(
-            `[Auftragsbuch] Version ${VERSION} geladen für ${state.username}. ` +
-            'Modus: ausschließlich lesend gegenüber Evergore.'
+            `[Auftragsbuch] Version ${VERSION} geladen für ${state.username} ` +
+            `auf Welt ${state.world}. Modus: ausschließlich lesend gegenüber Evergore.`
         );
     }
 
