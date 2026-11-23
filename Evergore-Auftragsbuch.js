@@ -7,6 +7,9 @@
 // @match        https://evergore.de/zwischenwelt?page=craft*
 // @match        https://evergore.de/zwischenwelt?page=bank*
 // @match        https://evergore.de/zwischenwelt?page=market*
+// @match        https://evergore.de/myrgath?page=craft*
+// @match        https://evergore.de/myrgath?page=bank*
+// @match        https://evergore.de/myrgath?page=market*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
