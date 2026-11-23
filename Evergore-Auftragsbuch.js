@@ -1229,7 +1229,7 @@
   </button>
  </div>
  ${updateState.checked && updateState.latestVersion && compareVersions(updateState.latestVersion, VERSION) > 0 ? `
-  <div class="eg-warning">
+  Softwareupdae nun verfügbar -> <div class="eg-warning">
    <a
     href="https://github.com/Omikun82/Evergore-Handel/blob/main/Evergore-Auftragsbuch.js"
     target="_blank"
