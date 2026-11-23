@@ -4,9 +4,9 @@
 // @version      1.3
 // @description  Rein lesende Auftrags- und Rezeptverwaltung für Evergore mit Zutatenverwaltung.
 // @author       Omikun & ChatGPT
-// @match        https://evergore.de/*?page=craft*
-// @match        https://evergore.de/*?page=bank*
-// @match        https://evergore.de/*?page=market*
+// @match        https://evergore.de/zwischenwelt?page=craft*
+// @match        https://evergore.de/zwischenwelt?page=bank*
+// @match        https://evergore.de/zwischenwelt?page=market*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
